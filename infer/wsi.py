@@ -378,8 +378,17 @@ class InferManager(base.InferManager):
                 _assemble_and_flush,
                 args=(wsi_pred_map_mmap_path, chunk_info, patch_output_list),
             )
+        
+        log_info("Finished raw prediction")
+
         proc_pool.close()
+
+        log_info("Close finished")
+
         proc_pool.join()
+
+        log_info("Join finished")
+
         return
 
     def __dispatch_post_processing(self, tile_info_list, callback):
@@ -478,6 +487,9 @@ class InferManager(base.InferManager):
             self.wsi_mask = cv2.imread(msk_path)
             self.wsi_mask = cv2.cvtColor(self.wsi_mask, cv2.COLOR_BGR2GRAY)
             self.wsi_mask[self.wsi_mask > 0] = 1
+            log_info(
+                "Mask found"
+            )
         else:
             log_info(
                 "WARNING: No mask found, generating mask via thresholding at 1.25x!"
@@ -733,7 +745,7 @@ class InferManager(base.InferManager):
         wsi_path_list.sort()  # ensure ordering
         for wsi_path in wsi_path_list[:]:
             wsi_base_name = pathlib.Path(wsi_path).stem
-            msk_path = "%s/%s.png" % (self.input_mask_dir, wsi_base_name)
+            msk_path = "%s/%s-labels.png" % (self.input_mask_dir, wsi_base_name)
             if self.save_thumb or self.save_mask:
                 output_file = "%s/json/%s.json" % (self.output_dir, wsi_base_name)
             else:

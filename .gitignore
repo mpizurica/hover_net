@@ -5,8 +5,12 @@
 cache/
 dataset/
 exp_output/
+hover/
+project_isabella/
+project_synth_data/
 
 # checkpoint paths
 *.npz
 *.png
 *.log
+*.tar

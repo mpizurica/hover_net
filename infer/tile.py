@@ -38,9 +38,32 @@ from misc.utils import (
 from misc.viz_utils import colorize, visualize_instances_dict
 from skimage import color
 
+# import pandas as pd
+# import lmdb
+# import pickle
+# import lz4framed
+# from PIL import Image
+
 import convert_format
 from . import base
 
+
+# def read_ldmb(path, mapping_dict, img_name_wanted):
+#     lmdb_connection = lmdb.open(path, subdir=False, readonly=True, lock=False, readahead=False, meminit=False)
+
+#     ind = mapping_dict[img_name_wanted]
+
+#     with lmdb_connection.begin(write=False) as lmdb_txn:
+#         keys = pickle.loads(lz4framed.decompress(lmdb_txn.get(b'__keys__')))
+#         key = keys[ind]
+#         val = lmdb_txn.get(key)
+#         img_name, img_arr, img_shape = pickle.loads(lz4framed.decompress(val))
+#         if img_name.decode() != img_name_wanted:
+#             print('mapping dataframe not correct')
+#             return
+#         else:
+#             image = np.frombuffer(img_arr, dtype=np.uint8).reshape(img_shape)
+#             return image
 
 ####
 def _prepare_patching(img, window_size, mask_size, return_src_top_corner=False):
@@ -156,16 +179,29 @@ class InferManager(base.InferManager):
         assert self.mem_usage < 1.0 and self.mem_usage > 0.0
 
         # * depend on the number of samples and their size, this may be less efficient
-        patterning = lambda x: re.sub("([\[\]])", "[\\1]", x)
-        file_path_list = glob.glob(patterning("%s/*" % self.input_dir))
+        # patterning = lambda x: re.sub("([\[\]])", "[\\1]", x)
+        # file_path_list = glob.glob(patterning("%s/*" % self.input_dir))
+        file_path_list = os.listdir(self.input_dir)
+        file_path_list = [self.input_dir + i for i in file_path_list]
+        print(file_path_list)
+        
+        # file_path_list = list(pd.read_csv(self.input_dir, index_col=0).set_index('img_name').index.values)
+        # path_made = '/oak/stanford/groups/ogevaert/data/Prad-TCGA/hover_net'
+        # already_made = glob.glob(path_made+'/*'+'/json/'+'*.json')
+        # already_made = [i.split('/')[-1] for i in already_made]
+        # already_made = [i.replace('.json', '.jpg') for i in already_made]
+        # skip = list(set(already_made) & set(file_path_list))      
+        # print('Already made jsons for '+str(len(skip))+' files')
+        # file_path_list = list(set(file_path_list) - set(already_made))
+
         file_path_list.sort()  # ensure same order
         assert len(file_path_list) > 0, 'Not Detected Any Files From Path'
         
-        rm_n_mkdir(self.output_dir + '/json/')
-        rm_n_mkdir(self.output_dir + '/mat/')
-        rm_n_mkdir(self.output_dir + '/overlay/')
-        if self.save_qupath:
-            rm_n_mkdir(self.output_dir + "/qupath/")
+        #rm_n_mkdir(self.output_dir + '/json/')
+        #rm_n_mkdir(self.output_dir + '/mat/')
+        #rm_n_mkdir(self.output_dir + '/overlay/')
+        #if self.save_qupath:
+        #    rm_n_mkdir(self.output_dir + "/qupath/")
 
         def proc_callback(results):
             """Post processing callback.
@@ -192,22 +228,35 @@ class InferManager(base.InferManager):
 
             if self.save_raw_map:
                 mat_dict["raw_map"] = pred_map
-            save_path = "%s/mat/%s.mat" % (self.output_dir, img_name)
-            sio.savemat(save_path, mat_dict)
 
-            save_path = "%s/overlay/%s.png" % (self.output_dir, img_name)
+            isExist = os.path.exists(self.output_dir + '/' + img_name) 
+            if not isExist:
+                os.makedirs(self.output_dir + '/' + img_name) 
+
+            save_path = "%s/%s/mat/%s.mat" % (self.output_dir, img_name, img_name) 
+            #sio.savemat(save_path, mat_dict)
+
+            save_path = "%s/%s/overlay/%s.png" % (self.output_dir, img_name, img_name) 
+
+            if not os.path.exists(self.output_dir + '/' + img_name + '/overlay/') :
+                os.makedirs(self.output_dir + '/' + img_name + '/overlay/') 
+                
             cv2.imwrite(save_path, cv2.cvtColor(overlaid_img, cv2.COLOR_RGB2BGR))
 
             if self.save_qupath:
                 nuc_val_list = list(inst_info_dict.values())
                 nuc_type_list = np.array([v["type"] for v in nuc_val_list])
                 nuc_coms_list = np.array([v["centroid"] for v in nuc_val_list])
-                save_path = "%s/qupath/%s.tsv" % (self.output_dir, img_name)
+                save_path = "%s/%s/qupath/%s.tsv" % (self.output_dir, img_name, img_name) 
                 convert_format.to_qupath(
                     save_path, nuc_coms_list, nuc_type_list, self.type_info_dict
                 )
 
-            save_path = "%s/json/%s.json" % (self.output_dir, img_name)
+            save_path = "%s/%s/json/%s.json" % (self.output_dir, img_name, img_name) 
+
+            if not os.path.exists(self.output_dir + '/' + img_name + '/json/') :
+                os.makedirs(self.output_dir + '/' + img_name + '/json/') 
+
             self.__save_json(save_path, inst_info_dict, None)
             return img_name
 
@@ -233,6 +282,9 @@ class InferManager(base.InferManager):
         if self.nr_post_proc_workers > 0:
             proc_pool = ProcessPoolExecutor(self.nr_post_proc_workers)
 
+        # mapping_df = pd.read_csv('/home/users/mpizuric/code/WSI_mutation/code/img_name_to_index.csv', index_col=0).set_index('img_name')
+        # mapping_dict = mapping_df.to_dict()['index']
+
         while len(file_path_list) > 0:
 
             hardware_stats = psutil.virtual_memory()
@@ -253,9 +305,16 @@ class InferManager(base.InferManager):
             cache_image_info_list = []
             while len(file_path_list) > 0:
                 file_path = file_path_list.pop(0)
+                print(file_path)
 
-                img = cv2.imread(file_path)
+                img = cv2.imread(file_path) 
                 img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+
+                # db = file_path.split('_')[0].replace('.svs', '.db')
+                # img = read_ldmb('/oak/stanford/groups/ogevaert/data/Prad-TCGA/TCGA_tiles/db_tiles_512px/'+db, 
+                #                 mapping_dict, file_path)
+                ### img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB) #--> db contains rgb!
+
                 src_shape = img.shape
 
                 img, patch_info, top_corner = _prepare_patching(
